@@ -10,13 +10,14 @@ type AddLineItemSignal struct {
 type CloseBillSignal struct{}
 
 type Bill struct {
-	Currency   string
-	LineItems []LineItem
-	TotalAmount 	 float64
+	Id 			string `json:"id"`
+	Currency   string `json:"currency"`
+	LineItems []LineItem `json:"lineItems"`
+	TotalAmount 	 float64 `json:"totalAmount"`
 }
 
 type LineItem struct {
-	Description string
-	Amount      float64
-	CreatedAt   *time.Time
+	Description string `json:"description"`
+	Amount      float64 `json:"amount"`
+	CreatedAt   *time.Time `json:"createdAt"`
 }

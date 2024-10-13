@@ -8,6 +8,7 @@ import (
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
 	"github.com/google/uuid"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 )
 
@@ -41,6 +42,14 @@ type CreateBillResponse struct {
 
 type GetBillRequest struct {
 	Id string `json:"id"`
+}
+
+type GetBillsParams struct {
+	Status string `query:"status"` // open, closed
+}
+
+type GetBillsResponse struct {
+	Bills []workflow.Bill `json:"bills"`
 }
 
 var SupportedCurrencies = []string{"USD", "GEL"}
@@ -133,3 +142,60 @@ func (s *Service) GetBill(ctx context.Context, id string) (*workflow.Bill, error
 
 	return &bill, nil
 }
+
+// encore:api public method=GET path=/api/bills
+func (s *Service) GetBills(ctx context.Context, params *GetBillsParams) (*GetBillsResponse, error) {
+	rlog.Info("Getting bills")
+
+	var query string
+	switch params.Status {
+	case "":
+			query = "WorkflowType='BillWorkflow'"
+	case "closed":
+			query = "WorkflowType='BillWorkflow' and ExecutionStatus = 'Completed'"
+	case "open":
+			query = "WorkflowType='BillWorkflow' and ExecutionStatus = 'Running'"
+	default:
+			return nil, s.eb.Code(errs.InvalidArgument).Msg("invalid status parameter").Err()
+	}
+	
+	options := &workflowservice.ListWorkflowExecutionsRequest{
+		Query: query,
+	}
+
+	// Query the workflow to get the current state
+	res, err := s.client.ListWorkflow(ctx, options)
+	rlog.Info("Listing workflows", "res", res)
+	if err != nil {
+		rlog.Error("Error listing workflows", "error", err)
+		return nil, s.eb.Code(errs.Internal).Msg("unable to get bills").Err()
+	}
+
+
+	var bills []workflow.Bill = make([]workflow.Bill, 0)
+
+	for _, e := range res.Executions {
+		var bill workflow.Bill
+		workflowID := e.GetExecution().WorkflowId
+		runID := e.GetExecution().RunId
+
+		// Query the workflow for the bill details
+		queryRes, err := s.client.QueryWorkflow(ctx, workflowID, runID, "getBill")
+		if err != nil {
+				rlog.Error("Error querying workflow", "workflowID", workflowID, "runID", runID, "error", err)
+				continue
+		}
+
+		err = queryRes.Get(&bill)
+		if err != nil {
+				rlog.Error("Error getting query result", "workflowID", workflowID, "runID", runID, "error", err)
+				continue
+		}
+
+		bill.Id = workflowID
+		bills = append(bills, bill)
+	}
+
+	return &GetBillsResponse{Bills: bills}, nil
+}
+

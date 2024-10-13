@@ -9,7 +9,7 @@ import (
 )
 
 // BillWorkflow models the lifecycle of a bill
-func BillWorkflow(ctx workflow.Context, b Bill) error {
+func BillWorkflow(ctx workflow.Context, b Bill) (Bill,error) {
 	rlog.Info("Bill workflow started", "id", workflow.GetInfo(ctx).WorkflowExecution.ID, "currency", b.Currency)	
 
 	err := workflow.SetQueryHandler(ctx, "getBill", func() (Bill, error) {
@@ -18,7 +18,7 @@ func BillWorkflow(ctx workflow.Context, b Bill) error {
 	})
 	if err != nil {
 		rlog.Error("Error setting query handler", "error", err)
-		return err
+		return b, err
 	}
 
 	closed := false
@@ -65,7 +65,7 @@ func BillWorkflow(ctx workflow.Context, b Bill) error {
 	}
 
 	rlog.Info("Bill workflow completed", "id", workflow.GetInfo(ctx).WorkflowExecution.ID)
-	return nil
+	return b, nil
 }
 
 func (bill *Bill) AddLineItem(item LineItem) {
