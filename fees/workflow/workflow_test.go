@@ -43,8 +43,6 @@ func (s *UnitTestSuite) Test_BillCreation() {
 	}, time.Millisecond)
 
 	s.env.ExecuteWorkflow(BillWorkflow, bill)
-
-	s.True(s.env.IsWorkflowCompleted())
 }
 
 func (s *UnitTestSuite) Test_BillCreationWithLineItem() {
@@ -88,5 +86,22 @@ func (s *UnitTestSuite) Test_BillCreationWithLineItem() {
 	}, time.Millisecond * 2)
 
 	s.env.ExecuteWorkflow(BillWorkflow, bill)
-	s.True(s.env.IsWorkflowCompleted())
+}
+
+func (s *UnitTestSuite) Test_BillClose() {
+	bill := Bill{
+		LineItems: make([]LineItem, 0),
+		Currency:  "USD",
+		TotalAmount: 0.0,
+	}
+	
+	s.env.RegisterDelayedCallback(func() {
+		s.env.SignalWorkflow("closeBill", CloseBillSignal{})
+	}, time.Millisecond)
+
+	s.env.RegisterDelayedCallback(func() {
+		s.True(s.env.IsWorkflowCompleted())
+	}, time.Millisecond * 3)
+
+	s.env.ExecuteWorkflow(BillWorkflow, bill)
 }

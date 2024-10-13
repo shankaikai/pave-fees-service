@@ -34,6 +34,7 @@ type CloseBillRequest struct {
 type CloseBillResponse struct {
 	Id 			string `json:"id"`
 	ClosedOn 	string `json:"closedOn"`
+	Bill 		workflow.Bill `json:"bill"`
 }
 
 type CreateBillResponse struct {
@@ -95,14 +96,28 @@ func (s *Service) CloseBill(ctx context.Context, req *CloseBillRequest) (*CloseB
 			return nil, s.eb.Code(errs.Internal).Msg("unable to cancel bill workflow").Err()
 	}
 
+	// Query the workflow to get the current state
+	res, err := s.client.QueryWorkflow(ctx, req.Id, "", "getBill")
+	if err != nil {
+			return nil, s.eb.Code(errs.Internal).Msg("unable to get bill").Err()
+	}
+
+	var bill workflow.Bill
+	res.Get(&bill)
+
 	return &CloseBillResponse{
 			Id: req.Id,
 			ClosedOn: time.Now().Local().Format(time.DateOnly),
+			Bill: bill,
 	}, nil
 }
 
 // encore:api public method=POST path=/api/bill/add
 func (s *Service) AddLineItem(ctx context.Context, req *AddLineItemRequest) (*AddLineItemResponse, error) {
+	if req.Amount <= 0 {
+			return nil, s.eb.Code(errs.InvalidArgument).Msg("amount must be greater than 0").Err()
+	}
+
 	rlog.Info("Adding line item to bill", "description", req.Description, "amount", req.Amount)
 
 	err := s.client.SignalWorkflow(ctx, req.BillId, "", "addLineItem", workflow.AddLineItemSignal{
