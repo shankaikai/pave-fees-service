@@ -2,6 +2,7 @@ package fees
 
 import (
 	"context"
+	"time"
 
 	"encore.app/fees/workflow"
 	"encore.dev/beta/errs"
@@ -11,24 +12,35 @@ import (
 )
 
 type CreateBillRequest struct {
-	Currency string
+	Currency string `json:"currency"`
 }
 
 type AddLineItemRequest struct {
-	Description string
-	Amount      float64
+	BillId 		string `json:"billId"`
+	Description string `json:"description"`
+	Amount      float64 `json:"amount"`
+}
+
+type AddLineItemResponse struct {
+	CurrentTotal float64 `json:"currentTotal"`
+	NumberOfItems int `json:"numberOfItems"`
 }
 
 type CloseBillRequest struct {
-	Id 			string
+	Id 			string  `json:"id"`
 }
 
 type CloseBillResponse struct {
-	Id 			string
+	Id 			string `json:"id"`
+	ClosedOn 	string `json:"closedOn"`
 }
 
 type CreateBillResponse struct {
-	Id     string
+	Id     string `json:"id"`
+}
+
+type GetBillRequest struct {
+	Id string `json:"id"`
 }
 
 // encore:api public method=POST path=/api/bill
@@ -42,8 +54,13 @@ func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*Crea
 	}
 
 	rlog.Info("Starting bill workflow", "id", billWorkFlowId)
-
-	we, err := s.client.ExecuteWorkflow(ctx, options, workflow.BillWorkflow, req.Currency)
+	
+	bill := workflow.Bill{
+			Currency: req.Currency,
+			LineItems: make([]workflow.LineItem, 0),
+			TotalAmount: 0.0,
+	}
+	we, err := s.client.ExecuteWorkflow(ctx, options, workflow.BillWorkflow, bill)
 	if err != nil {
 			return nil, s.eb.Code(errs.Internal).Msg("unable to start bill workflow").Err()
 	}
@@ -64,5 +81,48 @@ func (s *Service) CloseBill(ctx context.Context, req *CloseBillRequest) (*CloseB
 
 	return &CloseBillResponse{
 			Id: req.Id,
+			ClosedOn: time.Now().Local().Format(time.DateOnly),
 	}, nil
+}
+
+// encore:api public method=POST path=/api/bill/add
+func (s *Service) AddLineItem(ctx context.Context, req *AddLineItemRequest) (*AddLineItemResponse, error) {
+	rlog.Info("Adding line item to bill", "description", req.Description, "amount", req.Amount)
+
+	err := s.client.SignalWorkflow(ctx, req.BillId, "", "addLineItem", workflow.AddLineItemSignal{
+			Description: req.Description,
+			Amount:      req.Amount,
+	})
+	if err != nil {
+			return nil, s.eb.Code(errs.Internal).Msg("unable to add line item to bill").Err()
+	}
+
+	bill, err := s.client.QueryWorkflow(ctx, req.BillId, "", "getBill")
+	if err != nil {
+			return nil, s.eb.Code(errs.Internal).Msg("unable to get bill").Err()
+	}
+
+	var b workflow.Bill
+	bill.Get(&b)
+
+	return &AddLineItemResponse{
+			CurrentTotal: b.TotalAmount,
+			NumberOfItems: len(b.LineItems),
+	}, nil
+}
+
+// encore:api public method=GET path=/api/bill/:id
+func (s *Service) GetBill(ctx context.Context, id string) (*workflow.Bill, error) {
+	rlog.Info("Getting bill", "id", id)
+	
+	// Query the workflow to get the current state
+	res, err := s.client.QueryWorkflow(ctx, id, "", "getBill")
+	if err != nil {
+		return nil, s.eb.Code(errs.Internal).Msg("unable to get bill").Err()
+	}
+
+	var bill workflow.Bill
+	res.Get(&bill)
+
+	return &bill, nil
 }
