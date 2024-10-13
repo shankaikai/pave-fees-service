@@ -23,6 +23,10 @@ type CloseBillRequest struct {
 	Id 			string
 }
 
+type CloseBillResponse struct {
+	Id 			string
+}
+
 type CreateBillResponse struct {
 	Id     string
 }
@@ -46,5 +50,19 @@ func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*Crea
 
 	return &CreateBillResponse{
 			Id:    we.GetID(),
+	}, nil
+}
+
+// encore:api public method=POST path=/api/bill/close
+func (s *Service) CloseBill(ctx context.Context, req *CloseBillRequest) (*CloseBillResponse, error) {
+	rlog.Info("Closing bill", "id", req.Id)
+
+	err := s.client.SignalWorkflow(ctx, req.Id, "", "closeBill", workflow.CloseBillSignal{})
+	if err != nil {
+			return nil, s.eb.Code(errs.Internal).Msg("unable to cancel bill workflow").Err()
+	}
+
+	return &CloseBillResponse{
+			Id: req.Id,
 	}, nil
 }
