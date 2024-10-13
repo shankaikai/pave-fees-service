@@ -43,8 +43,15 @@ type GetBillRequest struct {
 	Id string `json:"id"`
 }
 
+var SupportedCurrencies = []string{"USD", "GEL"}
+
 // encore:api public method=POST path=/api/bill
 func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*CreateBillResponse, error) {
+	// Validate if the currency is supported
+	if !contains(SupportedCurrencies, req.Currency) {
+			return nil, s.eb.Code(errs.InvalidArgument).Msg("unsupported currency, only USD or GEL").Err()
+	}
+
 	// Generate a unique ID for the bill workflow
 	billWorkFlowId := uuid.New().String()
 
@@ -62,7 +69,7 @@ func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*Crea
 	}
 	we, err := s.client.ExecuteWorkflow(ctx, options, workflow.BillWorkflow, bill)
 	if err != nil {
-			return nil, s.eb.Code(errs.Internal).Msg("unable to start bill workflow").Err()
+			return nil, s.eb.Code(errs.Internal).Msg("unable to create bill").Err()
 	}
 
 	return &CreateBillResponse{

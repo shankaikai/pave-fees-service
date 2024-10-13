@@ -32,7 +32,6 @@ func BillWorkflow(ctx workflow.Context, b Bill) error {
 			selector := workflow.NewSelector(ctx)
 
 			// Register the signal handler for adding a line item
-
 			selector.AddReceive(closeChan, func(c workflow.ReceiveChannel, more bool) {
 				var signal CloseBillSignal
 				c.Receive(ctx, &signal)
@@ -45,6 +44,9 @@ func BillWorkflow(ctx workflow.Context, b Bill) error {
 				c.Receive(ctx, &signal)
 				rlog.Info("Received add line item signal", "description", signal.Description, "amount", signal.Amount)
 				now := time.Now()
+				if closed {
+					
+				}
 				b.AddLineItem(LineItem{
 					Description: signal.Description,
 					Amount:      signal.Amount,
@@ -68,5 +70,5 @@ func BillWorkflow(ctx workflow.Context, b Bill) error {
 
 func (bill *Bill) AddLineItem(item LineItem) {
 	bill.LineItems = append(bill.LineItems, item)
-	bill.TotalAmount =  math.Ceil(item.Amount*100) / 100 // Round to 2 dp
+	bill.TotalAmount += math.Ceil(item.Amount*100) / 100 // Round to 2 dp
 } 
