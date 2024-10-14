@@ -8,11 +8,17 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+const (
+	CloseBill = "closeBill"
+	AddLineItem = "addLineItem"
+	GetBill = "getBill"
+)
+
 // BillWorkflow models the lifecycle of a bill
 func BillWorkflow(ctx workflow.Context, b Bill) (Bill,error) {
 	rlog.Info("Bill workflow started", "id", workflow.GetInfo(ctx).WorkflowExecution.ID, "currency", b.Currency)	
 
-	err := workflow.SetQueryHandler(ctx, "getBill", func() (Bill, error) {
+	err := workflow.SetQueryHandler(ctx, GetBill, func() (Bill, error) {
 		rlog.Debug("Querying bill")
 		return b, nil
 	})
@@ -23,37 +29,36 @@ func BillWorkflow(ctx workflow.Context, b Bill) (Bill,error) {
 
 	closed := false
 	
-	closeChan := workflow.GetSignalChannel(ctx, "closeBill")
-	addLineItemChan := workflow.GetSignalChannel(ctx, "addLineItem")
+	closeChan := workflow.GetSignalChannel(ctx, CloseBill)
+	addLineItemChan := workflow.GetSignalChannel(ctx, AddLineItem)
 
 	// Workflow loop to keep listening for signals until the bill is closed
 	for {
 			// Create a selector to listen for signals
 			selector := workflow.NewSelector(ctx)
 
-			// Register the signal handler for adding a line item
+			// Register the signal handler for closing the bill
 			selector.AddReceive(closeChan, func(c workflow.ReceiveChannel, more bool) {
 				var signal CloseBillSignal
 				c.Receive(ctx, &signal)
 				rlog.Info("Received close bill signal")
+				now := time.Now()
+				b.ClosedOn = &now
 				closed = true
 			})
 
+			// Register the signal handler for adding a line item
 			selector.AddReceive(addLineItemChan, func(c workflow.ReceiveChannel, more bool) {
 				var signal AddLineItemSignal
 				c.Receive(ctx, &signal)
 				rlog.Info("Received add line item signal", "description", signal.Description, "amount", signal.Amount)
 				now := time.Now()
-				if closed {
-					
-				}
 				b.AddLineItem(LineItem{
 					Description: signal.Description,
 					Amount:      signal.Amount,
 					CreatedAt:   &now,
 				})
-				rlog.Info("Bill total amount updated", "totalAmount", b.TotalAmount)
-				rlog.Info("Bill line items updated", "lineItems", b.LineItems)
+				rlog.Info("Bill total amount updated", "totalAmount", b.TotalAmount, "lineItems", b.LineItems)
 			})
 
 			// Wait for any of the registered events

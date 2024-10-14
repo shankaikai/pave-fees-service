@@ -71,11 +71,13 @@ func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*Crea
 	}
 
 	rlog.Info("Starting bill workflow", "id", billWorkFlowId)
-	
+
+	now := time.Now()
 	bill := workflow.Bill{
 			Currency: req.Currency,
 			LineItems: make([]workflow.LineItem, 0),
 			TotalAmount: 0.0,
+			CreatedAt: &now,
 	}
 	we, err := s.client.ExecuteWorkflow(ctx, options, workflow.BillWorkflow, bill)
 	if err != nil {
@@ -97,7 +99,7 @@ func (s *Service) CloseBill(ctx context.Context, req *CloseBillRequest) (*CloseB
 	}
 
 	// Query the workflow to get the current state
-	res, err := s.client.QueryWorkflow(ctx, req.Id, "", "getBill")
+	res, err := s.client.QueryWorkflow(ctx, req.Id, "", workflow.GetBill)
 	if err != nil {
 			return nil, s.eb.Code(errs.Internal).Msg("unable to get bill").Err()
 	}
@@ -120,7 +122,7 @@ func (s *Service) AddLineItem(ctx context.Context, req *AddLineItemRequest) (*Ad
 
 	rlog.Info("Adding line item to bill", "description", req.Description, "amount", req.Amount)
 
-	err := s.client.SignalWorkflow(ctx, req.BillId, "", "addLineItem", workflow.AddLineItemSignal{
+	err := s.client.SignalWorkflow(ctx, req.BillId, "", workflow.AddLineItem, workflow.AddLineItemSignal{
 			Description: req.Description,
 			Amount:      req.Amount,
 	})
@@ -128,7 +130,7 @@ func (s *Service) AddLineItem(ctx context.Context, req *AddLineItemRequest) (*Ad
 			return nil, s.eb.Code(errs.Internal).Msg("unable to add line item to bill").Err()
 	}
 
-	bill, err := s.client.QueryWorkflow(ctx, req.BillId, "", "getBill")
+	bill, err := s.client.QueryWorkflow(ctx, req.BillId, "", workflow.GetBill)
 	if err != nil {
 			return nil, s.eb.Code(errs.Internal).Msg("unable to get bill").Err()
 	}
@@ -145,22 +147,22 @@ func (s *Service) AddLineItem(ctx context.Context, req *AddLineItemRequest) (*Ad
 // encore:api public method=GET path=/api/bill/:id
 func (s *Service) GetBill(ctx context.Context, id string) (*workflow.Bill, error) {
 	rlog.Info("Getting bill", "id", id)
-	
+
 	// Query the workflow to get the current state
-	res, err := s.client.QueryWorkflow(ctx, id, "", "getBill")
+	res, err := s.client.QueryWorkflow(ctx, id, "", workflow.GetBill)
 	if err != nil {
 		return nil, s.eb.Code(errs.Internal).Msg("unable to get bill").Err()
 	}
 
 	var bill workflow.Bill
 	res.Get(&bill)
+	bill.Id = id
 
 	return &bill, nil
 }
 
 // encore:api public method=GET path=/api/bills
 func (s *Service) GetBills(ctx context.Context, params *GetBillsParams) (*GetBillsResponse, error) {
-	rlog.Info("Getting bills")
 
 	var query string
 	switch params.Status {
@@ -171,7 +173,7 @@ func (s *Service) GetBills(ctx context.Context, params *GetBillsParams) (*GetBil
 	case "open":
 			query = "WorkflowType='BillWorkflow' and ExecutionStatus = 'Running'"
 	default:
-			return nil, s.eb.Code(errs.InvalidArgument).Msg("invalid status parameter").Err()
+			return nil, s.eb.Code(errs.InvalidArgument).Msg("invalid status parameter, use open or closed").Err()
 	}
 	
 	options := &workflowservice.ListWorkflowExecutionsRequest{
@@ -195,7 +197,7 @@ func (s *Service) GetBills(ctx context.Context, params *GetBillsParams) (*GetBil
 		runID := e.GetExecution().RunId
 
 		// Query the workflow for the bill details
-		queryRes, err := s.client.QueryWorkflow(ctx, workflowID, runID, "getBill")
+		queryRes, err := s.client.QueryWorkflow(ctx, workflowID, runID, workflow.GetBill)
 		if err != nil {
 				rlog.Error("Error querying workflow", "workflowID", workflowID, "runID", runID, "error", err)
 				continue
