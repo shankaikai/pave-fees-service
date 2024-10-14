@@ -107,8 +107,14 @@ func (s *UnitTestSuite) Test_BillClose() {
 	}, time.Millisecond)
 
 	s.env.RegisterDelayedCallback(func() {
+		res, err := s.env.QueryWorkflow(GetBill)
+		s.NoError(err)
+		err = res.Get(&bill)
+		s.NoError(err)
+		s.NotNil(bill.ClosedOn)
+
 		s.True(s.env.IsWorkflowCompleted())
-	}, time.Millisecond * 3)
+	}, time.Millisecond * 2)
 
 	s.env.ExecuteWorkflow(BillWorkflow, bill)
 }

@@ -15,7 +15,6 @@ type Bill struct {
 	LineItems []LineItem `json:"lineItems"`
 	TotalAmount 	 float64 `json:"totalAmount"`
 	CreatedAt *time.Time `json:"createdAt"`
-	Open 		 bool `json:"open"`
 	ClosedOn   *time.Time `json:"closedOn"`
 }
 
